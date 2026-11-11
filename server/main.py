@@ -6,8 +6,10 @@ POST /api/bookings {thread, item, option, persons, name, address, social} -> {st
 
 import logging
 import secrets
+import time
+from collections import defaultdict, deque
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
@@ -17,6 +19,24 @@ app = FastAPI()
 agents: dict[str, Agent] = {}  # one Agent (and its history) per thread
 
 THREAD = Field("default", pattern=r"^[\w-]{1,64}$")  # used as a file name in agent.py
+
+
+# shortcut: per-process, in-memory limiter keyed by IP; never pruned and resets on restart.
+# Fine for one container; move to Redis or the proxy if we scale out.
+hits: dict[tuple[str, str], deque] = defaultdict(deque)
+
+
+def limit(request: Request, bucket: str, max_hits: int, window_s: int) -> None:
+    """Every model call costs money, so cap requests per client IP."""
+    # Behind Caddy the first X-Forwarded-For entry is the client (the shared Caddy replaces any client-sent value).
+    forwarded = request.headers.get("x-forwarded-for")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "?")
+    now, q = time.monotonic(), hits[(bucket, ip)]
+    while q and now - q[0] > window_s:
+        q.popleft()
+    if len(q) >= max_hits:
+        raise HTTPException(429, "Too many messages, please wait a few minutes.")
+    q.append(now)
 
 
 def get_agent(thread: str) -> Agent:
@@ -34,7 +54,8 @@ def health() -> dict:
 
 
 @app.post("/api/chat")
-def chat(body: ChatIn) -> dict:
+def chat(body: ChatIn, request: Request) -> dict:
+    limit(request, "chat", max_hits=30, window_s=600)
     # Plain def: FastAPI runs it in a thread pool, so a slow model call doesn't block other requests.
     # shortcut: two parallel requests on one thread can interleave its history; fine for one user per thread.
     agent = get_agent(body.thread)
@@ -71,7 +92,8 @@ class BookingIn(BaseModel):
 
 
 @app.post("/api/bookings")
-def book(body: BookingIn) -> dict:
+def book(body: BookingIn, request: Request) -> dict:
+    limit(request, "book", max_hits=5, window_s=3600)
     # shortcut: simulated send, nothing is stored or emailed; wire a DB insert or email here.
     reference = "YAGA-" + secrets.token_hex(3).upper()
     print(f"[book ] {reference}: {body.item} / {body.option} / {body.persons} persons", flush=True)  # no personal data in logs

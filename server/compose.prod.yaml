@@ -1,0 +1,20 @@
+name: yaga
+
+services:
+  server:
+    build: .
+    container_name: yaga-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Bucharest # get_current_time reports this zone
+    volumes:
+      - threads:/app/.agent_threads # chat history survives rebuilds
+    networks: [web] # no published port: only yaga-web reaches it, as yaga-server:8080
+
+volumes:
+  threads:
+
+networks:
+  web:
+    external: true

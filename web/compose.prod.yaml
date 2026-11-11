@@ -1,0 +1,12 @@
+name: yaga-web
+
+services:
+  web:
+    build: .
+    container_name: yaga-web
+    restart: unless-stopped
+    networks: [web] # the shared Caddy proxies the yaga domain to yaga-web:80
+
+networks:
+  web:
+    external: true

@@ -82,7 +82,7 @@ export default function App() {
           : { role: "error", text: String(body.detail) },
       ]);
     } catch {
-      setLines((l) => [...l, { role: "error", text: "Can't reach the server. Is it running on :8081?" }]);
+      setLines((l) => [...l, { role: "error", text: "Can't reach the server, please try again in a moment." }]);
     } finally {
       setBusy(false);
     }

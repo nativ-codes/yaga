@@ -22,6 +22,7 @@ class FakeAgent:
 def client(monkeypatch):
     monkeypatch.setattr(main, "Agent", FakeAgent)
     main.agents.clear()
+    main.hits.clear()
     return TestClient(main.app)
 
 
@@ -49,3 +50,11 @@ def test_booking(monkeypatch):
 def test_prompt_has_knowledge_but_no_customer_data():
     assert "ISSA Inshore Skipper" in SYSTEM_PROMPT and "Ibiza" in SYSTEM_PROMPT
     assert "@" not in SYSTEM_PROMPT  # no emails from user_profiles leak to the model
+
+
+def test_rate_limit(monkeypatch):
+    c = client(monkeypatch)
+    for _ in range(30):
+        assert c.post("/api/chat", json={"message": "hi"}, headers={"X-Forwarded-For": "1.1.1.1, 172.18.0.2"}).status_code == 200
+    assert c.post("/api/chat", json={"message": "hi"}, headers={"X-Forwarded-For": "1.1.1.1"}).status_code == 429
+    assert c.post("/api/chat", json={"message": "hi"}, headers={"X-Forwarded-For": "2.2.2.2"}).status_code == 200

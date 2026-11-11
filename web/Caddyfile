@@ -1,0 +1,18 @@
+{
+	# The shared Caddy in front sets X-Forwarded-For; trust it so the server rate-limits real client IPs.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Plain HTTP inside the web network; the shared Caddy in front terminates TLS.
+:80 {
+	handle /api/* {
+		reverse_proxy yaga-server:8080
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
